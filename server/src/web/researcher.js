@@ -181,9 +181,9 @@ export class WebResearcher {
     // ---- parallel search -----------------------------------------------------
     const jobs = [];
     for (const provider of chosen) {
-      for (const q of plan.queries.slice(0, provider.kind === 'code' ? 2 : 2)) {
-        jobs.push({ provider, query: q });
-      }
+      // GitHub code search is the slowest endpoint — give it one focused query
+      const budget = provider.id === 'github-code' ? 1 : 2;
+      for (const q of plan.queries.slice(0, budget)) jobs.push({ provider, query: q });
     }
     const settled = await Promise.all(jobs.map(async ({ provider, query }) => {
       const key = `${provider.id}::${query.q}::${query.language || ''}`;
@@ -237,9 +237,9 @@ export class WebResearcher {
     merged = merged.map((r) => {
       const blob = `${r.title}. ${r.snippet}`;
       let dense = 0;
-      if (qvec) {
+      if (qvec && blob.length > 12) {
         try {
-          const v = this.runtime.embed(blob);
+          const v = this.runtime.embed(blob.slice(0, 400));
           for (let i = 0; i < v.length; i++) dense += v[i] * qvec[i];
         } catch { dense = 0; }
       }
@@ -253,18 +253,19 @@ export class WebResearcher {
 
     yield { type: 'web_results', results: merged.map(({ providers, queries, ...r }) => ({ ...r, providers })) };
 
-    // ---- read the best documents --------------------------------------------
+    // ---- read the best documents (in parallel) --------------------------------
     const docs = [];
-    for (const r of merged.slice(0, readDocs)) {
-      if (!r.meta?.doc) continue;
+    const readable = merged.slice(0, readDocs).filter((r) => r.meta?.doc);
+    for (const r of readable) yield { type: 'web_read', url: r.url, title: r.title };
+    const fetched = await Promise.all(readable.map(async (r) => {
       const key = `doc::${JSON.stringify(r.meta.doc)}`;
-      let doc = cacheGet(key);
-      if (doc) this.stats.cacheHits++;
-      else {
-        yield { type: 'web_read', url: r.url, title: r.title };
-        doc = await readDocument(r.meta.doc);
-        if (doc && !doc.error) cacheSet(key, doc);
-      }
+      const cached = cacheGet(key);
+      if (cached) { this.stats.cacheHits++; return { r, doc: cached }; }
+      const doc = await readDocument(r.meta.doc);
+      if (doc && !doc.error) cacheSet(key, doc);
+      return { r, doc };
+    }));
+    for (const { r, doc } of fetched) {
       if (!doc || doc.error || !doc.text) continue;
       this.stats.documents++;
       const passages = extractPassages(doc.text, plan.terms, { max: 3 });

@@ -1,19 +1,24 @@
-# ATLAS — Research Console
+# ATLAS — a local research assistant with a model trained from scratch
 
-A deep-research AI console whose language model is **trained from scratch, in this repository, in plain
-JavaScript**. No PyTorch, no TensorFlow, no ONNX, no hosted inference API, no pretrained weights. The
-autodiff engine, the attention kernels, the AdamW optimiser, the byte-level BPE tokenizer, the training
-loop, the sampler, the embedding-based retriever and the intent router are all source files you can read
-here — and they run on the same sandbox that serves the UI.
+A chat app you can talk to about anything. It plans the work, **searches live sources**, runs
+**70 deterministic instruments** for every number it reports, writes and runs code, and tells you how
+confident it is. The language model at its centre was **trained from scratch in this repository, in plain
+JavaScript** — no PyTorch, no TensorFlow, no pretrained weights, no inference API.
+
+Accounts and conversations live **in your browser** (IndexedDB). Nothing about you is stored on a server,
+because there is no server-side account.
 
 ```
-corpus  ──▶  BPE tokenizer  ──▶  GPT (autodiff, pure JS)  ──▶  checkpoint
-                                        │                          │
-                                        ├── embeddings ──▶ hybrid RAG index
-                                        ├── attention ────▶ interpretability
-                                        └── sampling ─────▶ neural synthesis
-                                                                   │
-   61 deterministic research instruments ───────────────▶ agent orchestrator ──▶ SSE ──▶ React console
+                    ┌──────────── live web ────────────┐
+                    │ GitHub repos · code · issues     │
+   you ──▶ agent ──▶│ npm · PyPI · Wikipedia · DDG · SO│──┐
+                    └──────────────────────────────────┘  │
+                             │                            ├──▶ ranked, quoted, cited answer
+   ATLAS-R1 (trained here) ──┤ embeddings · generation    │
+                             │                            │
+   70 instruments ───────────┤ statistics · code · text ──┘
+                             │
+   local knowledge base ─────┘ hybrid dense + BM25 retrieval
 ```
 
 ---
@@ -21,154 +26,154 @@ corpus  ──▶  BPE tokenizer  ──▶  GPT (autodiff, pure JS)  ──▶ 
 ## Quick start
 
 ```bash
-npm install                # workspaces: packages/*, server, web
+npm install
 
-npm run corpus             # 1.4M-character research corpus            (~0.1 s)
-npm run train              # trains the transformer from scratch       (~70 min, 2 cores)
-npm run train:router       # trains the neural intent router           (~15 s)
-npm run index              # precomputes the retrieval index           (~5 s)
+npm run corpus         # 3.8M-char corpus: research prose + code + dialogue   (~0.2 s)
+npm run train          # trains the transformer from scratch                  (~75 min, 2 cores)
+npm run train:router   # trains the neural intent router                      (~15 s)
+npm run index          # precomputes the retrieval index                      (~5 s)
 
-npm run dev                # API on :8787 + Vite dev server on :5173
+npm run dev            # API on :8787 + UI on :5173
 ```
 
-Prefer a fast smoke run? `npm run train:quick` (120 steps) produces a working, if babbling, checkpoint in
-a few minutes; everything downstream behaves identically.
+In a hurry? `npm run train:quick` gives a working (if babbling) checkpoint in a few minutes; everything
+downstream behaves identically. Then open the UI, **create an account**, and start typing.
 
-Production:
-
-```bash
-npm run build              # bundles the SPA into web/dist
-npm start                  # single process serving API + SPA on :8787
-```
-
-Tests:
-
-```bash
-npm test                   # 18 tests: gradient checks, overfit, serialisation, all 54 instruments
-```
+Production: `npm run build && npm start` serves the whole thing from one process on `:8787`.
+Tests: `npm test` — 18 suites covering gradients, instruments and numerical ground truth.
+UI safety net: `npm run smoke` renders every screen in Node to catch render crashes.
 
 ---
 
-## What is actually trained here
+## What the app does
+
+**Type anything.** Three modes, one input box:
+
+| Mode | What runs |
+| --- | --- |
+| **Chat** | one instrument, no web, fastest path |
+| **Research** | plan → live search → local retrieval → instruments → synthesis → self-critique |
+| **Code** | coding instruments plus GitHub code search, npm and PyPI |
+
+Every answer shows its work: the ranked intents, the searches it ran, the documents it read, the
+instruments it executed with their runtime, the sources it cited, and a calibrated confidence figure.
+Code blocks have **copy** and **run** buttons — `run` executes the snippet in an isolated `node:vm`
+sandbox and prints the output underneath.
+
+### Live sources, honestly reported
+
+The web layer probes each provider at boot and adapts:
+
+| Provider | Kind | Reachability |
+| --- | --- | --- |
+| GitHub repositories / code / issues | code, community | works wherever `api.github.com` is reachable |
+| npm registry, PyPI | packages | public JSON APIs |
+| Wikipedia, DuckDuckGo, Stack Overflow | reference, web, community | activate automatically on an unrestricted network |
+
+Unreachable providers are skipped and shown as offline in Settings → Live sources — the app never
+pretends to have searched something it could not reach. Results are merged, de-duplicated, ranked with
+the model's **own embeddings** plus lexical scoring and provider agreement, and the best documents are
+fetched and quoted. A second retrieval pass expands the query with terms mined from the first answer.
+
+The HTTP layer also trusts the machine's CA store, so TLS-intercepting proxies (corporate networks,
+sandboxes) do not silently break every search.
+
+---
+
+## The model, trained here
 
 | Component | Where | How it is trained |
 | --- | --- | --- |
-| **ATLAS-R1 language model** | `packages/neurojs`, `scripts/train.js` | 934,656-parameter decoder-only transformer (4 layers, 4 heads, d=128, ctx=96, vocab 1024). AdamW + warmup/cosine + grad clipping, 800 steps × batch 12 over 540,075 BPE tokens. **Final validation loss 0.4469 (perplexity 1.56)** in 70 min on 2 CPU cores. |
-| **Byte-level BPE tokenizer** | `packages/neurojs/src/bpe.js` | Merge-frequency training on the corpus; 1024 tokens, ~2.6 chars/token, lossless round-trip. |
-| **Neural intent router** | `scripts/train-router.js` | Hashed n-gram MLP (1024→192→61) trained on 7k synthesised paraphrases, ~96% held-out accuracy. |
-| **Retrieval embeddings** | `scripts/build-index.js` | Position-weighted mean-pooled hidden states from the model itself — the RAG vectors are the LM's own representations. |
+| **ATLAS-R1** | `packages/neurojs`, `scripts/train.js` | decoder-only transformer, 4 layers / 4 heads / d=128 / ctx 96, byte-level BPE. AdamW + warmup/cosine + gradient clipping. v1 shipped at 934,656 params, **val loss 0.4469 (ppl 1.56)**; v2 adds a 2048-token vocabulary for code and trains on the 3.8M-char corpus. |
+| **Intent router** | `scripts/train-router.js` | hashed n-gram MLP (1024→192→70) over 7k synthesised paraphrases, ~96% held-out accuracy. Fused with per-skill rule matchers and numeric priors. |
+| **Retrieval embeddings** | `scripts/build-index.js` | position-weighted mean-pooled hidden states — the RAG vectors are the model's own representations. |
 
-Everything is seeded: same seed ⇒ bit-identical weights. `npm run pipeline` rebuilds the entire chain.
+Everything is seeded: same seed ⇒ bit-identical weights. `npm run pipeline` rebuilds the entire chain,
+and `npm run promote -- --from data/models_v2 --watch` hot-swaps a newly finished checkpoint into the
+running server without a restart.
 
-### The neural core (`packages/neurojs`)
-
-A miniature deep-learning framework, ~1,800 lines, zero dependencies:
-
-- `tensor.js` — reverse-mode autodiff over `Float32Array`, with hand-tuned GEMM kernels (2 output rows ×
-  4 reduction steps per iteration ⇒ ~2.4 GFLOP/s on one sandbox core, 2.7× the naive loop), fused causal
-  self-attention, GELU, LayerNorm, cross-entropy, dropout.
-- `nn.js` / `optim.js` — modules, parameter groups, AdamW with decoupled weight decay, global-norm
-  clipping, warmup + cosine decay.
-- `gpt.js` — the transformer, weight-tied head, checkpoint (de)serialisation with a 4-byte-aligned binary
-  format, plus `embed()` and attention tracing for introspection.
-- `sample.js` — temperature, top-k, nucleus, typical-p, repetition/frequency/presence penalties, stop
-  strings, per-token entropy and probability traces.
-
-Correctness is enforced by `tests/gradcheck.test.js`: a directional finite-difference gradient check
-against every parameter tensor, a tiny-batch overfit test, a bit-exact checkpoint round-trip and a
-tokenizer round-trip.
+**The neural core** (`packages/neurojs`, ~1,900 lines, zero dependencies): reverse-mode autodiff over
+`Float32Array`, hand-tuned GEMM kernels (2 output rows × 4 reduction steps per iteration — 2.4 GFLOP/s
+per core, 2.7× the naive loop), fused causal self-attention with per-head tracing, GELU, LayerNorm,
+cross-entropy, dropout, AdamW, cosine schedules, byte-level BPE, and a sampler with temperature, top-k,
+nucleus, typical-p and repetition penalties. Correctness is enforced by directional finite-difference
+gradient checks against **every** parameter tensor, a tiny-batch overfit test and a bit-exact checkpoint
+round-trip.
 
 ---
 
-## The research engine (`packages/skills`) — 61 instruments
+## The 70 instruments
 
-Deterministic, auditable, dependency-free tools. The neural model writes prose; **these produce the
-numbers**, so nothing quantitative is ever hallucinated.
+Deterministic, auditable, dependency-free. The model writes prose; **these produce the numbers**.
 
 | Category | Instruments |
 | --- | --- |
-| Reasoning & planning | programme planner, hypothesis forge, methodology critic, limitations auditor, Socratic ladder, steelman/red team, divergent idea engine, multi-level explainer |
-| Study design | experiment designer, reporting checklists (CONSORT/PRISMA/STROBE/ARRIVE/TRIPOD/ML), ethics & governance screen |
-| Statistics | descriptives, t-tests (one/two/paired/Welch), ANOVA, correlation (Pearson/Spearman), OLS regression, chi-square, Mann–Whitney, power & sample size, Bayesian updating, multiplicity control, bootstrap & permutation, distributions, Monte-Carlo design simulation |
-| Mathematics | expression compiler, equation solver, numeric calculus, linear algebra (det/inverse/solve/eigen), RK4 ODE integrator, optimiser, combinatorics, special functions |
-| Text analytics | TextRank summariser, RAKE/TF-IDF keywords, six readability indices, corpus statistics, text comparison, claim mining, fallacy & rhetoric detector |
-| Literature | citation formatter (APA/MLA/Chicago/IEEE/Vancouver/BibTeX), PICO screening matrix, evidence synthesis table, simulated peer review, abstract composer, outline architect |
-| Data & code | dataset profiler, sandboxed JS runtime (`node:vm`), regex laboratory, network analyser, time-series diagnostics, JSON inspector |
-| Neural introspection | raw completion, tokenizer explorer, attention cartographer, embedding probe, perplexity scorer, knowledge retrieval, model card |
-| Utilities | randomisation & allocation, timeline calculator, unit converter |
+| Software engineering | code writer (36 vetted recipes), reviewer, runner, explainer, test generator, scaffolder, language translator, debug assistant, complexity analyser, regex builder |
+| Statistics | descriptives, t-tests, ANOVA, correlation, OLS, chi-square, Mann–Whitney, power, Bayesian updating, multiplicity control, bootstrap & permutation, distributions, Monte-Carlo design simulation |
+| Mathematics | expression compiler, equation solver, numeric calculus, linear algebra, RK4, optimiser, combinatorics, special functions |
+| Research & design | programme planner, hypothesis forge, experiment designer, methodology critic, limitations auditor, reporting checklists, ethics screen, Socratic ladder, steelman, idea engine |
+| Text & literature | TextRank summariser, keywords, readability, corpus stats, comparison, claim mining, fallacy detector, citation formatter, PICO screening, evidence synthesis, peer review, abstract, outline |
+| Data | dataset profiler, regex lab, network analyser, time-series diagnostics, JSON inspector |
+| Neural introspection | completion, tokenizer explorer, attention maps, embedding probe, perplexity, knowledge retrieval, model card |
+| Utilities | randomisation, timeline calculator, unit converter |
 
-The statistics are validated against published reference values (t/χ²/F quantiles, textbook t-tests,
-noiseless OLS recovery) in `tests/skills.test.js`.
-
----
-
-## The agent
-
-`server/src/agent.js` runs a six-stage pipeline and streams every stage over SSE:
-
-1. **Understand** — entity/number extraction, keyword mining, and intent ranking that fuses the trained
-   neural router with per-skill heuristic matchers.
-2. **Plan** — an explicit, displayed plan of which instruments will run and why.
-3. **Retrieve** — hybrid dense (model embeddings) + BM25 retrieval over the chunked knowledge base.
-4. **Execute** — instruments run with arguments inferred from natural language (`"90% power"` → `power=0.9`),
-   each guarded so it never fires on input it cannot use.
-5. **Synthesise** — instrument output, citations and an optional neural paragraph, streamed token-wise.
-6. **Self-critique** — calibrated confidence, named weaknesses, and what would change the answer.
-
-Slash commands bypass routing: `/stats.ttest {"a":"1 2 3","b":"4 5 6"}`, `/text.summarize <text>`,
-`/help`, `/model.card`.
+The code recipes are shared with the corpus generator, so the model was **trained on the same code the
+console serves**.
 
 ---
 
-## The console (`web`)
+## Accounts and privacy
 
-React 18 + Vite, no component library — every pixel and every chart is hand-written.
+- Register and sign in locally; multiple accounts per browser are supported.
+- Passwords are never stored or transmitted — only a PBKDF2-SHA256 verifier (210,000 iterations, random
+  per-account salt), which is the current OWASP floor.
+- Conversations, messages, traces and settings live in IndexedDB, scoped per account.
+- Settings → Account & data offers a full JSON export, a one-click wipe, password change and account
+  deletion. Clearing site data erases everything; there is no recovery, because there is no copy.
 
-- **Console** — streaming answers with a live reasoning trace, per-instrument visualisations, KaTeX maths,
-  copy/export, and a token-level decoding view.
-- **Skill Atlas** — all 61 instruments, searchable, each runnable from a generated parameter form.
-- **Neural Lab** — sampling with live decoding stats, tokenizer explorer, per-head attention heat maps,
-  perplexity scoring, embedding probes, and **live gradient descent**: run real AdamW steps against the
-  loaded weights from the browser and watch the loss curve move.
-- **Knowledge** — the curated entries, hybrid semantic search, and a window into the pretraining corpus.
-- **Model** — parameter budget, loss curves, optimiser settings, throughput, and end-of-training samples.
+---
 
-Plus a ⌘K command palette, two themes, a right-hand inspector with full decoding controls, and an
-answer-level confidence readout.
+## Interface
+
+Strictly monochrome — two themes (**Ink**, **Paper**), no hue anywhere, hierarchy from weight, spacing and
+hairlines. Chat-first: sidebar of conversations, one composer, answers with inline source chips. A
+details drawer holds the reasoning trace, sources, instrument outputs and charts. ⌘K opens a command
+palette over every instrument and setting. Secondary workspaces: **Instruments** (run any of the 70 from
+a generated form), **Neural lab** (sampling, tokenizer, attention heat maps, perplexity, embeddings, and
+live gradient descent from the browser), **Knowledge**, **Model**.
 
 ---
 
 ## Layout
 
 ```
-packages/neurojs     autodiff, transformer, tokenizer, sampler, optimiser, hashing featuriser
-packages/corpus      curated knowledge base + procedural corpus generator
-packages/skills      61 research instruments + math/stats/text cores + registry
-scripts/             build-corpus · train · train-router · build-index
-server/src/          runtime (model + RAG) · agent orchestrator · Express/SSE API · sessions
-web/src/             React console: views, components, charts, store, API client
-tests/               gradient checks + instrument conformance + numerical ground truth
-data/                corpus, checkpoints, retrieval index, sessions
+packages/neurojs     autodiff · transformer · tokenizer · sampler · optimiser · hashing featuriser
+packages/corpus      knowledge base · 36 code recipes · dialogue + code corpus generator
+packages/skills      70 instruments · math/stats/text cores · registry
+server/src           runtime · agent orchestrator · web/ (providers + researcher) · API · sessions
+web/src              React console: auth gate · chat · drawer · settings · labs · charts
+scripts/             corpus · train · train-router · build-index · promote-model · ssr-smoke
+tests/               gradient checks · instrument conformance · numerical ground truth
+data/                corpus · checkpoints · retrieval index · web cache
 ```
 
 ## API
 
 | Method | Route | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/health` `/api/model` `/api/skills` `/api/knowledge` | status, model card, catalogue, knowledge base |
-| `POST` | `/api/chat/stream` | SSE deep-research pipeline |
+| `GET` | `/api/health` `/api/model` `/api/skills` `/api/knowledge` | status, model card, catalogue, KB |
+| `GET` | `/api/web/status` | provider reachability + TLS trust |
+| `POST` | `/api/web/search` | live multi-provider search |
+| `POST` | `/api/chat/stream` | SSE agent pipeline |
 | `POST` | `/api/skills/:id/run` | execute one instrument |
-| `POST` | `/api/retrieve` | hybrid retrieval |
 | `POST` | `/api/neural/{generate,tokenize,attention,perplexity,embed}` | model introspection |
 | `POST` | `/api/train/stream` | live fine-tuning with streamed loss |
-| `GET/POST/PATCH/DELETE` | `/api/sessions/:id?` | persisted conversations |
 
 ## Honest limitations
 
-A 0.93M-parameter model trained for ~70 minutes on 1.4M characters of domain text is a **language surface**, not
-a knowledge base. It writes plausible methodology English and produces useful embeddings; it does not know
-facts about the world. That division of labour is deliberate and visible everywhere in the UI: the numbers
-come from instruments, the evidence comes from cited passages, and the neural paragraph is always labelled
-as what it is.
+A ~1M-parameter model trained for about an hour is a **language surface**, not a knowledge base. It
+writes plausible methodology and code English and produces useful embeddings; it does not know facts
+about the world. That division of labour is visible everywhere: numbers come from instruments, evidence
+comes from cited sources, and the neural paragraph is always labelled as what it is.
 
 MIT-style use; built end to end for this workspace.

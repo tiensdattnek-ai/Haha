@@ -14,8 +14,8 @@
   },
   "scripts": {
     "install:all": "npm install",
-    "corpus": "node scripts/build-corpus.js",
-    "train": "node --max-old-space-size=3072 scripts/train.js",
+    "corpus": "CORPUS_CHARS=${CORPUS_CHARS:-2400000} node scripts/build-corpus.js",
+    "train": "node --max-old-space-size=3072 scripts/train.js --vocab 2048 --steps 800",
     "train:router": "node scripts/train-router.js",
     "index": "node scripts/build-index.js",
     "pipeline": "npm run corpus && npm run train && npm run train:router && npm run index",
@@ -26,7 +26,9 @@
     "start": "NODE_ENV=production node server/src/index.js",
     "test": "node --test \"tests/*.test.js\"",
     "train:quick": "node scripts/train.js --steps 120 --evalevery 20",
-    "preview": "npm -w web run preview"
+    "preview": "npm -w web run preview",
+    "promote": "node scripts/promote-model.js",
+    "smoke": "npx --yes esbuild@0.24 scripts/ssr-smoke.mjs --bundle --platform=node --format=cjs --loader:.css=empty --outfile=web/.ssr.cjs && node web/.ssr.cjs && rm -f web/.ssr.cjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.0"
