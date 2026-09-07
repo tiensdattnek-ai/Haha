@@ -1,0 +1,11 @@
+{
+  "name": "@atlas/skills",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "The ATLAS deep-research skill engine: 40+ deterministic research, statistics, text and data tools.",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./*": "./src/*.js"
+  }
+}
