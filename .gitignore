@@ -9,5 +9,7 @@ data/runtime/
 web/dist/
 
 # generated model artefacts that are cheap to rebuild
-data/models/corpus.tokens.bin
+data/models*/corpus.tokens.bin
+data/models_v2/
+data/models/backup-*/
 data/train.log
