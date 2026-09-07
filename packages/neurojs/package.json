@@ -1,0 +1,11 @@
+{
+  "name": "@atlas/neurojs",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Zero-dependency reverse-mode autodiff, tensors, BPE and a GPT-style transformer, written from scratch in JavaScript.",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./*": "./src/*.js"
+  }
+}

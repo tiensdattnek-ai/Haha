@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+.env
+.env.local
+data/corpus/*.txt
+data/runtime/
+web/dist/
+
+# generated model artefacts that are cheap to rebuild
+data/models/corpus.tokens.bin
+data/train.log

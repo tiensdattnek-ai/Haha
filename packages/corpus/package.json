@@ -1,0 +1,11 @@
+{
+  "name": "@atlas/corpus",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Procedural research-language corpus generator + curated knowledge base for ATLAS.",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./*": "./src/*.js"
+  }
+}
